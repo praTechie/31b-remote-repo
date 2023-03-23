@@ -1,0 +1,17 @@
+def convert(file, path, directory_path):
+    """
+    Extract the contents from a pdf and converts it into xml and save it to a path
+    :param file: PDF file path
+    :param path: XML file path
+    :param directory_path: Temporary data path
+    :return: bool
+    """
+    # Check if file is encrypted
+
+    try:
+        file_extension = file[:-3] + file[-3:].upper()
+        if os.path.exists(file):
+            pikepdf.open(file)
+        else:
+            file = file_extension
+            pikepdf.open(file_extension)
