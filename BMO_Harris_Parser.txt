@@ -1,0 +1,271 @@
+from datetime import datetime
+from HELPER import *
+from dotenv import load_dotenv
+load_dotenv()
+import json
+
+file_pdf = os.getenv(r'file')
+path_xml = os.getenv(r'xml_path')
+directory_path_pdf = os.getenv(r'pdf_directory_path')
+path_png = os.getenv(r'png_path')
+file_xml = os.getenv(r'xml_file')
+directory_path_xml = os.getenv(r'xml_directory_path')
+
+class BMO_Harris(Parser):
+    """
+        Parse BMO_Harris Bank statements
+    """
+
+    def parser(self, page_tag):
+        """
+                Parse the xml and create a data dictionary
+                :param page_tag: Content of all pages
+                :return: list[dict]
+        """
+
+        details_tag = page_tag[0].find_all('text')
+        details_tag1 = page_tag[1].find_all('text')
+        details_tag2 = page_tag[2].find_all('text')
+        details_tag3 = page_tag[3].find_all('text')
+        details_tag4 = page_tag[4].find_all('text')
+        details_tag5 = page_tag[5].find_all('text')
+        details_tag_count = len(details_tag)
+        # print(details_tag_count)
+        self.bank_details = {}
+        self.bank_details['name'] = {}
+        self.bank_details['address'] = {}
+        self.bank_details["address"] = {"street": ""}
+        self.bank_details['bank_name'] = 'BMO HARRIS'
+        self.bank_details['locale'] = 'en'
+        self.bank_details['currency'] = "U.S. Dollar"
+        bank_details = []
+        transactions = []
+        year = '2021'
+        count = 0
+        for iterText in range(details_tag_count):
+            if 285 < int(details_tag[iterText].get("top")) < 314 and 10 < int(details_tag[iterText].get("left")):
+                count += 1                
+        for iterText in range(details_tag_count):
+            if count == 3:
+                # print(f"count is {count}")
+                if 285 < int(details_tag[iterText].get("top")) < 287 and 10 < int(details_tag[iterText].get("left")):
+                    name_split = details_tag[iterText].text.split()
+                    self.bank_details['name'] = name_split[0]
+                    self.bank_details['name'] += " "+name_split[1]
+                    # print(self.bank_details['name'])
+                if 199 < int(details_tag[iterText].get("top")) < 301 and 10 < int(details_tag[iterText].get("left")):
+                    self.bank_details["address"]["street"] = details_tag[iterText].text.lstrip()
+                if 312 < int(details_tag[iterText].get("top")) < 314 and 10 < int(details_tag[iterText].get("left")):
+                    address_details = details_tag[iterText].text.split()
+                    self.bank_details["address"]["city"] = address_details[0]
+                    self.bank_details["address"]["state"] = address_details[1]
+                if 312 < int(details_tag[iterText].get("top")) < 314 and 10 < int(details_tag[iterText].get("left")):                                    
+                    self.bank_details["address"]["zip_code"] = details_tag[iterText].text.split()[-1]
+            if 752 < int(details_tag[iterText].get('top')) < 754 and 10 < int(details_tag[iterText].get('left')):
+                self.bank_details['account_number'] = details_tag[iterText].text.split()[-2]
+            if 832 < int(details_tag[iterText].get("top")) < 834  and 11 == int(details_tag[iterText].get("left")):
+                self.bank_details['opening_balance'] = details_tag[iterText].text.split()[-1]
+            if 872 < int(details_tag[iterText].get("top")) <874 and 11 == int(details_tag[iterText].get("left")):
+                self.bank_details['closing_balance'] = details_tag[iterText].text.split()[-1]
+            if 246 < int(details_tag[iterText].get("top")) < 248 and 11 == int(details_tag[iterText].get("left")):
+                starting_date = details_tag[iterText].text.split()
+                datetime_object = datetime.strptime(starting_date[0], "%m/%d/%y")
+                year = datetime_object.year
+                self.bank_details['from_date'] = starting_date[0]
+            if 246 < int(details_tag[iterText].get("top")) < 248 and 11 == int(details_tag[iterText].get("left")):
+                starting_date = details_tag[iterText].text.split()
+                datetime_object = datetime.strptime(starting_date[2], "%m/%d/%y")
+                year = datetime_object.year
+                self.bank_details['to_date'] =  starting_date[2]
+
+        for iterPage in range(len(page_tag)):
+            transactions_end = False
+            debits_end = False
+            credit_start = False
+            text_tag = page_tag[iterPage].find_all('text')
+            # print(f"text tag is {text_tag}")
+            text_tag_count = len(text_tag)
+
+            if self.check_if_page_has_transactions(text_tag, text_tag_count):
+                iterText = 0
+                while iterText < text_tag_count:
+                    text = text_tag[iterText].text.lower()
+                    if 'daily balance summary' in text:
+                        transactions_end = True
+                        break
+                    if 'deposits and other credits' in text:
+                        debits_end = True
+                        iterText +=1
+                        continue
+                    if 'withdrawals and other debits' in text:
+                        credit_start = True
+                        iterText +=1
+                        continue
+                    if iterPage == 0:
+                        if ( 11 == int(text_tag[iterText]["left"])  and 925 < int(text_tag[iterText]["top"]) < 1114 and "date" not in text):                            
+                            txn_object = {"date": "", "description": "", "amount": "", "type": ""}                                                  
+                            date_obj = details_tag[iterText].text.lower()                                                                                                             
+                            # txn_object['date'] = date_obj + '', ','+ str(year) 
+                            txn_object['date'] = date_obj[7:13].strip() 
+
+                    # if 156 < int(details_tag[iterText].get("top")) < 171 and 127 < int(details_tag[iterText].get("left")):
+                    # self.bank_details["address"]["street"] += " " + details_tag[iterText].text
+
+                            print(len(text))                                                                                                       
+                            if  len(text) > 60 :                                                             
+                                txn_object['description'] += details_tag[iterText].text.strip().lower()   # It wil give the description array details of txn_object
+                                print(txn_object['description']) 
+                            transactions.append(txn_object)  # Append txn_object to the end of the transactions list
+                           
+                            print(txn_object) # It will print transactions object {date , description, amount, type}
+                            iterText += 1
+                            continue
+                        if  11 == int(text_tag[iterText]["left"])   and 940 < int(text_tag[iterText]["top"]) < 953 and "descr iptio n" not in text:
+                            if len(transactions) > 0:
+                                if transactions[-1]["description"] == "" :
+                                    transactions[-1]["description"] += text_tag[iterText].text
+                                    if not text_tag[iterText + 1].text.replace(',', '').replace('.', '').isdigit():
+                                        transactions[-1]['description'] += " " + text_tag[iterText + 1].text
+                                    iterText += 1
+                                    continue
+                        if 11 == int(text_tag[iterText]["left"]) and 786 == int(text_tag[iterText]["top"]):
+                            if transactions[-1]["description"]:
+                                transactions[-1]["description"] += " " + text_tag[iterText].text
+                                iterText +=1                                                                                                                                              
+                                continue
+                        if 11 == int(text_tag[iterText]["left"])  and 1038 == int(text_tag[iterText]["top"]) < 1039:
+                            if transactions[-2]["description"]:
+                                transactions[-1]["description"] += " " + text_tag[iterText].text
+                                iterText +=1
+                                continue                                                                  
+                        # if 822 <= int(text_tag[iterText]["left"]) <= 1106 and 751 < int(text_tag[iterText]["top"]) and "am oun t($ )" not in text and "continued" not in text:
+                        #     if len(transactions) > 0:
+                        #         transactions[-1]["amount"] = float(text.replace(',', ''))
+                        #         transactions[-1]["type"] = "debit"
+                        #         iterText += 1
+                        #         continue                                                                                        
+                        if 11 == int(text_tag[iterText]["left"]) < 16 and 925 < int(text_tag[iterText]["top"]) < 1114 and "amount" not in text :
+                            if len(transactions) > 0:
+                                print(transactions)
+                                transactions[25:35]["amount"] = float(details_tag[iterText].text[25:35].replace(',', '')) # to convert string given for "amount" to float
+                                transactions[-1]["type"] = "deposit"
+                                iterText += 1
+                                continue
+                        iterText += 1
+                        
+                    if iterPage == 1 :
+                        
+                        if (11 == int(text_tag[iterText]["left"]) and 392 < int(text_tag[iterText]["top"]) <1138 and "date" not in text):                           
+                            txn_object = {"date": "", "description": "", "amount": "", "type": ""}                                                  
+                            date_obj = details_tag[iterText].text.lower()   
+                            print(date_obj)                                                                                                          
+                            # txn_object['date'] = date_obj + '', ','+ str(year) 
+                            txn_object['date'] = date_obj[7:13].strip() 
+                            if len(text) > 60:
+                                # txn_object['description'] = text[:]
+                                txn_object['description'] += details_tag[iterText].text.strip().lower()
+                            transactions.append(txn_object)
+                            iterText += 1
+                            continue
+                        if 100 <= int(text_tag[iterText]["left"]) <= 575 and 55 < int(text_tag[iterText]["top"]) and "description" not in text:
+                            if len(transactions) > 0:
+                                if transactions[-1]["description"] == "":
+                                    transactions[-1]["description"] = text_tag[iterText].text
+                                    if not text_tag[iterText + 1].text.replace(',', '').replace('.', '').isdigit():
+                                        transactions[-1]['description'] += " " + text_tag[iterText + 1].text
+                                    iterText += 1
+                                    continue
+                        if 574 <= int(text_tag[iterText]["left"]) <=575 and 342 <= int(text_tag[iterText]["top"]) <662:
+                            if transactions[-1]["description"]:
+                                transactions[-1]["description"] += " " + text_tag[iterText].text
+                                iterText +=1                                                                                                                                              
+                                continue
+                        if 100 == int(text_tag[iterText]["left"]) < 101 and 140 == int(text_tag[iterText]["top"]) < 141 or 100 == int(text_tag[iterText]["left"]) < 101 and 644 == int(text_tag[iterText]["top"]) < 645 :
+                            if transactions[-2]["description"]:
+                                transactions[-1]["description"] += " " + text_tag[iterText].text
+                                iterText +=1                                                                                                                                              
+                                continue                         
+                                
+                        if 820 <= int(text_tag[iterText]["left"]) <= 900 and 55 < int(text_tag[iterText]["top"]) < 897 and "amount" not in text and "continued" not in text:
+                            if len(transactions) > 0:
+                                transactions[-1]["amount"] = float(text.replace(',', ''))
+                                transactions[-1]["type"] = "debit"
+                                iterText += 1
+                                continue 
+                        if 825 <= int(text_tag[iterText]["left"]) <= 900 and 981 <= int(text_tag[iterText]["top"]) < 1117 and "amount" not in text and "continued" not in text:
+                            if len(transactions) > 0:
+                                transactions[-1]["amount"] = float(text.replace(',', ''))
+                                transactions[-1]["type"] = "credit"
+                                iterText += 1
+                                continue    
+                        
+                        iterText += 1
+                    
+                    if iterPage == 2 :
+                        if 'continued' in text:
+                            iterText +=1
+                            continue
+                        if 41 <= int(text_tag[iterText]["left"]) < 52 and 142 < int(text_tag[iterText]["top"]) < 547 and 'date' not in text and "descr iptio n" not in text and "am oun t($ )" not in text:
+                            txn_object = {"date": "", "description": "", "amount": "", "type": ""}
+                            date_objec = details_tag2[iterText].text.lower()
+                            txn_object['date'] = date_objec +"/"+str(year)
+                            if len(text) > 6:
+                                txn_object['description'] = text[6:]
+                            transactions.append(txn_object)
+                            iterText += 1
+                            continue
+                        if 100 <= int(text_tag[iterText]["left"]) <= 520 and 142 < int(text_tag[iterText]["top"]) and "description" not in text:
+                            if len(transactions) > 0:
+                                if transactions[-1]["description"] == "":
+                                    transactions[-1]["description"] = text_tag[iterText].text
+                                    if not text_tag[iterText + 1].text.replace(',', '').replace('.', '').isdigit():
+                                        transactions[-1]['description'] += " " + text_tag[iterText + 1].text
+                                    iterText += 1
+                                    continue  
+                                if transactions[-1]["description"]:
+                                    transactions[-1]["description"] += " " + text_tag[iterText].text
+                                    iterText += 1
+                                    continue     
+                        if 827 <= int(text_tag[iterText]["left"]) <= 900 and 142 <= int(text_tag[iterText]["top"]) < 1117 and "am oun t($ )" not in text :
+                            if len(transactions) > 0:
+                                transactions[-1]["amount"] = float(text.replace(',', ''))
+                                transactions[-1]["type"] = "credit"
+                                iterText += 1
+                                continue
+                        
+                        iterText +=1
+
+                if transactions_end:
+                    break
+        self.bank_details['transactions'] = transactions
+        bank_details.append(self.bank_details)
+        
+        ## writing the return value into the json file.
+        json_object = json.dumps(bank_details, indent=4)
+        with open("sample.json", "w") as outfile:
+            outfile.write(json_object)
+        print(bank_details)    
+        return bank_details
+
+    def check_if_page_has_transactions(self, text_tag, text_tag_count):
+        iterTxn = 0
+        while iterTxn < text_tag_count:
+            if "deposits and other credits" in text_tag[iterTxn].text.lower() or "withdrawals and other debits" in text_tag[iterTxn].text.lower() or "continued" in text_tag[iterTxn].text.lower():
+                return True
+            iterTxn += 1
+        return False
+
+file_pdf = os.getenv(r'file')
+path_xml = os.getenv(r'xml_path')
+directory_path_pdf = os.getenv(r'pdf_directory_path')
+path_png = os.getenv(r'png_path')
+file_xml = os.getenv(r'xml_file')
+directory_path_xml = os.getenv(r'xml_directory_path')
+
+convert(file_pdf,path_xml,directory_path_pdf,path_png)
+obj = BMO_Harris()
+bank_name, page_tag, parse_type = obj.parse(file_xml,directory_path_xml)
+obj.parser(page_tag)
+
+
+
